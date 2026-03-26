@@ -209,6 +209,15 @@ type User struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type VerificationCode struct {
+	ID        pgtype.UUID        `json:"id"`
+	Email     string             `json:"email"`
+	Code      string             `json:"code"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	Used      bool               `json:"used"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type Workspace struct {
 	ID          pgtype.UUID        `json:"id"`
 	Name        string             `json:"name"`

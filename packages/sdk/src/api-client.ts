@@ -36,6 +36,7 @@ export class ApiClient {
   private token: string | null = null;
   private workspaceId: string | null = null;
   private logger: SDKLogger;
+  private onUnauthorized: (() => void) | null = null;
 
   constructor(baseUrl: string, options?: { logger?: SDKLogger }) {
     this.baseUrl = baseUrl;
@@ -48,6 +49,10 @@ export class ApiClient {
 
   setWorkspaceId(id: string | null) {
     this.workspaceId = id;
+  }
+
+  setOnUnauthorized(callback: (() => void) | null) {
+    this.onUnauthorized = callback;
   }
 
   private async fetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -75,6 +80,9 @@ export class ApiClient {
     });
 
     if (!res.ok) {
+      if (res.status === 401 && this.onUnauthorized) {
+        this.onUnauthorized();
+      }
       let message = `API error: ${res.status} ${res.statusText}`;
       try {
         const data = await res.json() as { error?: string };
@@ -99,10 +107,17 @@ export class ApiClient {
   }
 
   // Auth
-  async login(email: string, name?: string): Promise<LoginResponse> {
-    return this.fetch("/auth/login", {
+  async sendCode(email: string): Promise<{ message: string }> {
+    return this.fetch("/auth/send-code", {
       method: "POST",
-      body: JSON.stringify({ email, name }),
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async verifyCode(email: string, code: string): Promise<LoginResponse> {
+    return this.fetch("/auth/verify-code", {
+      method: "POST",
+      body: JSON.stringify({ email, code }),
     });
   }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/handler"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	"github.com/multica-ai/multica/server/internal/realtime"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -45,7 +46,8 @@ func allowedOrigins() []string {
 // NewRouter creates the fully-configured Chi router with all middleware and routes.
 func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus) chi.Router {
 	queries := db.New(pool)
-	h := handler.New(queries, pool, hub, bus)
+	emailSvc := service.NewEmailService()
+	h := handler.New(queries, pool, hub, bus, emailSvc)
 
 	r := chi.NewRouter()
 
@@ -74,7 +76,8 @@ func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus) chi.Route
 	})
 
 	// Auth (public)
-	r.Post("/auth/login", h.Login)
+	r.Post("/auth/send-code", h.SendCode)
+	r.Post("/auth/verify-code", h.VerifyCode)
 
 	// Daemon API routes (no user auth; daemon auth deferred to later)
 	r.Route("/api/daemon", func(r chi.Router) {

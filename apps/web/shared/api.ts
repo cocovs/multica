@@ -15,4 +15,12 @@ if (typeof window !== "undefined") {
   if (wsId) {
     api.setWorkspaceId(wsId);
   }
+
+  api.setOnUnauthorized(() => {
+    localStorage.removeItem("multica_token");
+    localStorage.removeItem("multica_workspace_id");
+    api.setToken(null);
+    api.setWorkspaceId(null);
+    window.location.href = "/login";
+  });
 }
