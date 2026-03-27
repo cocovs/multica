@@ -219,7 +219,7 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg s
 		s.createAgentComment(ctx, task.IssueID, task.AgentID, errMsg, "system")
 	}
 	if issue, err := s.Queries.GetIssue(ctx, task.IssueID); err == nil {
-		s.createInboxForIssueCreator(ctx, issue, task.AgentID, "agent_blocked", "action_required", "Agent blocked: "+issue.Title, errMsg)
+		s.createInboxForIssueCreator(ctx, issue, task.AgentID, "task_failed", "action_required", "Task failed: "+issue.Title, errMsg)
 	}
 
 	// Reconcile agent status
