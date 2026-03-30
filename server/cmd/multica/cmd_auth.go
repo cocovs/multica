@@ -66,6 +66,10 @@ func resolveAppURL() string {
 			return strings.TrimRight(val, "/")
 		}
 	}
+	cfg, err := cli.LoadCLIConfig()
+	if err == nil && cfg.AppURL != "" {
+		return strings.TrimRight(cfg.AppURL, "/")
+	}
 	return "http://localhost:3000"
 }
 
