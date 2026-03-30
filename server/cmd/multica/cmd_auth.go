@@ -203,12 +203,11 @@ func runAuthLoginBrowser(cmd *cobra.Command) error {
 		return fmt.Errorf("token verification failed: %w", err)
 	}
 
-	// Save to config. Reset workspace data when server changes.
+	// Save to config. Reset workspace data on every login — the user or
+	// server may have changed, so stale workspaces must not persist.
 	cfg, _ := cli.LoadCLIConfig()
-	if cfg.ServerURL != serverURL {
-		cfg.WorkspaceID = ""
-		cfg.WatchedWorkspaces = nil
-	}
+	cfg.WorkspaceID = ""
+	cfg.WatchedWorkspaces = nil
 	cfg.Token = patResp.Token
 	cfg.ServerURL = serverURL
 	cfg.AppURL = appURL
@@ -249,10 +248,8 @@ func runAuthLoginToken(cmd *cobra.Command) error {
 	}
 
 	cfg, _ := cli.LoadCLIConfig()
-	if cfg.ServerURL != serverURL {
-		cfg.WorkspaceID = ""
-		cfg.WatchedWorkspaces = nil
-	}
+	cfg.WorkspaceID = ""
+	cfg.WatchedWorkspaces = nil
 	cfg.Token = token
 	cfg.ServerURL = serverURL
 	if err := cli.SaveCLIConfig(cfg); err != nil {
