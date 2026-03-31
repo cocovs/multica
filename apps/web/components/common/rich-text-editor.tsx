@@ -39,6 +39,7 @@ interface RichTextEditorProps {
   className?: string;
   debounceMs?: number;
   onSubmit?: () => void;
+  onBlur?: () => void;
   onUploadFile?: (file: File) => Promise<UploadResult | null>;
 }
 
@@ -306,6 +307,7 @@ const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>(
       className,
       debounceMs = 300,
       onSubmit,
+      onBlur,
       onUploadFile,
     },
     ref,
@@ -313,6 +315,7 @@ const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>(
     const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
     const onUpdateRef = useRef(onUpdate);
     const onSubmitRef = useRef(onSubmit);
+    const onBlurRef = useRef(onBlur);
     const onUploadFileRef = useRef(onUploadFile);
 
     // Helper to get markdown from @tiptap/markdown extension.
@@ -357,6 +360,7 @@ const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>(
     // Keep refs in sync without recreating editor
     onUpdateRef.current = onUpdate;
     onSubmitRef.current = onSubmit;
+    onBlurRef.current = onBlur;
     onUploadFileRef.current = onUploadFile;
 
     const editor = useEditor({
@@ -397,6 +401,9 @@ const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>(
         debounceRef.current = setTimeout(() => {
           onUpdateRef.current?.(ed.getMarkdown());
         }, debounceMs);
+      },
+      onBlur: () => {
+        onBlurRef.current?.();
       },
       editorProps: {
         handleDOMEvents: {

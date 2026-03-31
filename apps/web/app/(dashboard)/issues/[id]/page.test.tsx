@@ -336,6 +336,9 @@ describe("IssueDetailPage", () => {
       expect(mockCreateComment).toHaveBeenCalledWith(
         "issue-1",
         "New test comment",
+        undefined,
+        undefined,
+        undefined,
       );
     });
 

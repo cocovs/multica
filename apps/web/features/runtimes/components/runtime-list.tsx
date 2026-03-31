@@ -50,8 +50,8 @@ export function RuntimeList({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="overflow-y-auto h-full border-r">
-      <div className="flex h-12 items-center justify-between border-b px-4">
+    <div className="flex flex-col h-full border-r">
+      <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
         <h1 className="text-sm font-semibold">Runtimes</h1>
         <span className="text-xs text-muted-foreground">
           {runtimes.filter((r) => r.status === "online").length}/
@@ -59,7 +59,7 @@ export function RuntimeList({
         </span>
       </div>
       {runtimes.length === 0 ? (
-        <div className="flex flex-col items-center justify-center px-4 py-12">
+        <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
           <Server className="h-8 w-8 text-muted-foreground/40" />
           <p className="mt-3 text-sm text-muted-foreground">
             No runtimes registered
@@ -73,7 +73,7 @@ export function RuntimeList({
           </p>
         </div>
       ) : (
-        <div className="divide-y">
+        <div className="flex-1 overflow-y-auto divide-y">
           {runtimes.map((runtime) => (
             <RuntimeListItem
               key={runtime.id}

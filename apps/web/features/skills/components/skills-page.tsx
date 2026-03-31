@@ -645,8 +645,8 @@ export default function SkillsPage() {
     >
       <ResizablePanel id="list" defaultSize={280} minSize={240} maxSize={400} groupResizeBehavior="preserve-pixel-size">
         {/* Left column — skill list */}
-        <div className="overflow-y-auto h-full border-r">
-          <div className="flex h-12 items-center justify-between border-b px-4">
+        <div className="flex flex-col h-full border-r">
+          <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
             <h1 className="text-sm font-semibold">Skills</h1>
             <Tooltip>
               <TooltipTrigger
@@ -664,7 +664,7 @@ export default function SkillsPage() {
             </Tooltip>
           </div>
           {skills.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-4 py-12">
+            <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
               <Sparkles className="h-8 w-8 text-muted-foreground/40" />
               <p className="mt-3 text-sm text-muted-foreground">No skills yet</p>
               <p className="mt-1 text-xs text-muted-foreground text-center">
@@ -680,7 +680,7 @@ export default function SkillsPage() {
               </Button>
             </div>
           ) : (
-            <div className="divide-y">
+            <div className="flex-1 overflow-y-auto divide-y">
               {skills.map((skill) => (
                 <SkillListItem
                   key={skill.id}

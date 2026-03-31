@@ -1516,8 +1516,8 @@ export default function AgentsPage() {
     >
       <ResizablePanel id="list" defaultSize={280} minSize={240} maxSize={400} groupResizeBehavior="preserve-pixel-size">
         {/* Left column — agent list */}
-        <div className="overflow-y-auto h-full border-r">
-          <div className="flex h-12 items-center justify-between border-b px-4">
+        <div className="flex flex-col h-full border-r">
+          <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
             <h1 className="text-sm font-semibold">Agents</h1>
             <Button
               variant="ghost"
@@ -1528,7 +1528,7 @@ export default function AgentsPage() {
             </Button>
           </div>
           {agents.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-4 py-12">
+            <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
               <Bot className="h-8 w-8 text-muted-foreground/40" />
               <p className="mt-3 text-sm text-muted-foreground">No agents yet</p>
               <Button
@@ -1541,7 +1541,7 @@ export default function AgentsPage() {
               </Button>
             </div>
           ) : (
-            <div className="divide-y">
+            <div className="flex-1 overflow-y-auto divide-y">
               {agents.map((agent) => (
                 <AgentListItem
                   key={agent.id}
