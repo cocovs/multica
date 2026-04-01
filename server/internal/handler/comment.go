@@ -191,10 +191,16 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 // anyone but does NOT @mention the issue's assignee agent. This is used to
 // suppress the on_comment trigger when the user is directing their comment at
 // someone else (e.g. sharing results with a colleague, asking another agent).
+// @all is treated as a broadcast — it suppresses the trigger because the user
+// is announcing to everyone, not specifically requesting work from the agent.
 func (h *Handler) commentMentionsOthersButNotAssignee(content string, issue db.Issue) bool {
 	mentions := util.ParseMentions(content)
 	if len(mentions) == 0 {
 		return false // No mentions — normal on_comment behavior
+	}
+	// @all is a broadcast to all members — suppress agent trigger.
+	if util.HasMentionAll(mentions) {
+		return true
 	}
 	if !issue.AssigneeID.Valid {
 		return true // No assignee — mentions target others
