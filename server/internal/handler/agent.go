@@ -142,8 +142,7 @@ func taskToResponse(t db.AgentTaskQueue) AgentTaskResponse {
 
 func (h *Handler) ListAgents(w http.ResponseWriter, r *http.Request) {
 	workspaceID := resolveWorkspaceID(r)
-	member, ok := h.workspaceMember(w, r, workspaceID)
-	if !ok {
+	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
 		return
 	}
 
@@ -152,9 +151,6 @@ func (h *Handler) ListAgents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to list agents")
 		return
 	}
-
-	userID := requestUserID(r)
-	isAdmin := roleAllowed(member.Role, "owner", "admin")
 
 	// Batch-load skills for all agents to avoid N+1.
 	skillRows, err := h.Queries.ListAgentSkillsByWorkspace(r.Context(), parseUUID(workspaceID))
@@ -172,20 +168,14 @@ func (h *Handler) ListAgents(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Filter private agents: only visible to owner_id or workspace admin
-	var visible []AgentResponse
+	// All agents (including private) are visible to workspace members.
+	visible := make([]AgentResponse, 0, len(agents))
 	for _, a := range agents {
-		if a.Visibility == "private" && !isAdmin && uuidToString(a.OwnerID) != userID {
-			continue
-		}
 		resp := agentToResponse(a)
 		if skills, ok := skillMap[resp.ID]; ok {
 			resp.Skills = skills
 		}
 		visible = append(visible, resp)
-	}
-	if visible == nil {
-		visible = []AgentResponse{}
 	}
 
 	writeJSON(w, http.StatusOK, visible)
@@ -275,7 +265,7 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 
 	triggers, _ := json.Marshal(req.Triggers)
 	if req.Triggers == nil {
-		triggers = []byte("[]")
+		triggers = defaultAgentTriggers()
 	}
 
 	agent, err := h.Queries.CreateAgent(r.Context(), db.CreateAgentParams{
@@ -328,8 +318,8 @@ type UpdateAgentRequest struct {
 }
 
 // canManageAgent checks whether the current user can update or delete an agent.
-// Workspace-visible agents require owner/admin role. Private agents additionally
-// require the user to be the agent's owner (or a workspace owner/admin).
+// Only the agent owner or workspace owner/admin can manage any agent,
+// regardless of whether it is public or private.
 func (h *Handler) canManageAgent(w http.ResponseWriter, r *http.Request, agent db.Agent) bool {
 	wsID := uuidToString(agent.WorkspaceID)
 	member, ok := h.requireWorkspaceRole(w, r, wsID, "agent not found", "owner", "admin", "member")
@@ -338,12 +328,8 @@ func (h *Handler) canManageAgent(w http.ResponseWriter, r *http.Request, agent d
 	}
 	isAdmin := roleAllowed(member.Role, "owner", "admin")
 	isAgentOwner := uuidToString(agent.OwnerID) == requestUserID(r)
-	if agent.Visibility == "private" && !isAdmin && !isAgentOwner {
-		writeError(w, http.StatusForbidden, "only the agent owner can manage this private agent")
-		return false
-	}
-	if agent.Visibility != "private" && !isAdmin && !isAgentOwner {
-		writeError(w, http.StatusForbidden, "insufficient permissions")
+	if !isAdmin && !isAgentOwner {
+		writeError(w, http.StatusForbidden, "only the agent owner can manage this agent")
 		return false
 	}
 	return true

@@ -4,14 +4,12 @@ import { useMemo, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
-  Bot,
   Check,
   ChevronDown,
   CircleDot,
   Columns3,
   Filter,
   List,
-  Plus,
   SignalHigh,
   SlidersHorizontal,
   User,
@@ -19,7 +17,6 @@ import {
   UserPen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useIssueStore } from "@/features/issues/store";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -39,7 +36,6 @@ import {
   PopoverContent,
 } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
-import { useModalStore } from "@/features/modals";
 import {
   ALL_STATUSES,
   STATUS_CONFIG,
@@ -47,20 +43,24 @@ import {
   PRIORITY_CONFIG,
 } from "@/features/issues/config";
 import { StatusIcon, PriorityIcon } from "@/features/issues/components";
-import { useWorkspaceStore, useActorName } from "@/features/workspace";
+import { useWorkspaceStore } from "@/features/workspace";
+import { ActorAvatar } from "@/components/common/actor-avatar";
 import {
   useIssueViewStore,
   SORT_OPTIONS,
   CARD_PROPERTY_OPTIONS,
   type ActorFilterValue,
 } from "@/features/issues/stores/view-store";
+import {
+  useIssuesScopeStore,
+  type IssuesScope,
+} from "@/features/issues/stores/issues-scope-store";
 import { filterIssues } from "@/features/issues/utils/filter";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import type { Issue } from "@/shared/types";
 
 // ---------------------------------------------------------------------------
 // HoverCheck — shadcn official pattern (PR #6862)
-// Uses data-selected attr instead of Checkbox component to avoid
-// DropdownMenuCheckboxItem's focus:**:text-accent-foreground cascade.
 // ---------------------------------------------------------------------------
 
 const FILTER_ITEM_CLASS =
@@ -124,6 +124,16 @@ function useIssueCounts(allIssues: Issue[]) {
 }
 
 // ---------------------------------------------------------------------------
+// Scope config
+// ---------------------------------------------------------------------------
+
+const SCOPES: { value: IssuesScope; label: string; description: string }[] = [
+  { value: "all", label: "All", description: "All issues in this workspace" },
+  { value: "members", label: "Members", description: "Issues assigned to team members" },
+  { value: "agents", label: "Agents", description: "Issues assigned to AI agents" },
+];
+
+// ---------------------------------------------------------------------------
 // Actor sub-menu content (shared between Assignee and Creator)
 // ---------------------------------------------------------------------------
 
@@ -147,8 +157,6 @@ function ActorSubContent({
   const [search, setSearch] = useState("");
   const members = useWorkspaceStore((s) => s.members);
   const agents = useWorkspaceStore((s) => s.agents);
-  const { getActorInitials } = useActorName();
-
   const query = search.toLowerCase();
   const filteredMembers = members.filter((m) =>
     m.name.toLowerCase().includes(query),
@@ -208,9 +216,7 @@ function ActorSubContent({
                   className={FILTER_ITEM_CLASS}
                 >
                   <HoverCheck checked={checked} />
-                  <div className="inline-flex size-4.5 shrink-0 items-center justify-center rounded-full bg-muted text-[8px] font-medium text-muted-foreground">
-                    {getActorInitials("member", m.user_id)}
-                  </div>
+                  <ActorAvatar actorType="member" actorId={m.user_id} size={18} />
                   <span className="truncate">{m.name}</span>
                   {count > 0 && (
                     <span className="ml-auto text-xs text-muted-foreground">
@@ -239,9 +245,7 @@ function ActorSubContent({
                   className={FILTER_ITEM_CLASS}
                 >
                   <HoverCheck checked={checked} />
-                  <div className="inline-flex size-4.5 shrink-0 items-center justify-center rounded-full bg-info/10 text-info">
-                    <Bot className="size-2.5" />
-                  </div>
+                  <ActorAvatar actorType="agent" actorId={a.id} size={18} />
                   <span className="truncate">{a.name}</span>
                   {count > 0 && (
                     <span className="ml-auto text-xs text-muted-foreground">
@@ -268,7 +272,10 @@ function ActorSubContent({
 // IssuesHeader
 // ---------------------------------------------------------------------------
 
-export function IssuesHeader() {
+export function IssuesHeader({ scopedIssues }: { scopedIssues: Issue[] }) {
+  const scope = useIssuesScopeStore((s) => s.scope);
+  const setScope = useIssuesScopeStore((s) => s.setScope);
+
   const viewMode = useIssueViewStore((s) => s.viewMode);
   const statusFilters = useIssueViewStore((s) => s.statusFilters);
   const priorityFilters = useIssueViewStore((s) => s.priorityFilters);
@@ -278,85 +285,71 @@ export function IssuesHeader() {
   const sortBy = useIssueViewStore((s) => s.sortBy);
   const sortDirection = useIssueViewStore((s) => s.sortDirection);
   const cardProperties = useIssueViewStore((s) => s.cardProperties);
-  const setViewMode = useIssueViewStore((s) => s.setViewMode);
-  const toggleStatusFilter = useIssueViewStore((s) => s.toggleStatusFilter);
-  const togglePriorityFilter = useIssueViewStore((s) => s.togglePriorityFilter);
-  const toggleAssigneeFilter = useIssueViewStore((s) => s.toggleAssigneeFilter);
-  const toggleNoAssignee = useIssueViewStore((s) => s.toggleNoAssignee);
-  const toggleCreatorFilter = useIssueViewStore((s) => s.toggleCreatorFilter);
-  const clearFilters = useIssueViewStore((s) => s.clearFilters);
-  const setSortBy = useIssueViewStore((s) => s.setSortBy);
-  const setSortDirection = useIssueViewStore((s) => s.setSortDirection);
-  const toggleCardProperty = useIssueViewStore((s) => s.toggleCardProperty);
+  const act = useIssueViewStore.getState();
 
-  const allIssues = useIssueStore((s) => s.issues);
-  const counts = useIssueCounts(allIssues);
+  const counts = useIssueCounts(scopedIssues);
 
-  const filteredCount = useMemo(
-    () => filterIssues(allIssues, { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters }).length,
-    [allIssues, statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters],
-  );
-
-  const filterCount = getActiveFilterCount({
-    statusFilters,
-    priorityFilters,
-    assigneeFilters,
-    includeNoAssignee,
-    creatorFilters,
-  });
+  const hasActiveFilters =
+    getActiveFilterCount({
+      statusFilters,
+      priorityFilters,
+      assigneeFilters,
+      includeNoAssignee,
+      creatorFilters,
+    }) > 0;
 
   const sortLabel =
     SORT_OPTIONS.find((o) => o.value === sortBy)?.label ?? "Manual";
-  const hasActiveFilters = filterCount > 0;
 
   return (
     <div className="flex h-12 shrink-0 items-center justify-between px-4">
-      <div className="flex items-center gap-2">
-        {/* View toggle */}
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button variant="outline" size="sm">
-                {viewMode === "board" ? <Columns3 className="size-3.5" /> : <List className="size-3.5" />}
-                {viewMode === "board" ? "Board" : "List"}
-              </Button>
-            }
-          />
-          <DropdownMenuContent align="start" className="w-auto">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>View</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => setViewMode("board")}>
-                <Columns3 />
-                Board
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setViewMode("list")}>
-                <List />
-                List
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      {/* Left: scope buttons */}
+      <div className="flex items-center gap-1">
+        {SCOPES.map((s) => (
+          <Tooltip key={s.value}>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={
+                    scope === s.value
+                      ? "bg-accent text-accent-foreground hover:bg-accent/80"
+                      : "text-muted-foreground"
+                  }
+                  onClick={() => setScope(s.value)}
+                >
+                  {s.label}
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">{s.description}</TooltipContent>
+          </Tooltip>
+        ))}
+      </div>
 
-        {/* Filter — DropdownMenu with sub-menus */}
+      {/* Right: filter + display + view toggle */}
+      <div className="flex items-center gap-1">
+        {/* Filter */}
         <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                className={hasActiveFilters ? "border-primary/50 text-primary" : ""}
-              >
-                <Filter className="size-3.5" />
-                Filter
-                {hasActiveFilters && (
-                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
-                    {filterCount}
-                  </span>
-                )}
-              </Button>
-            }
-          />
-          <DropdownMenuContent align="start" className="w-44">
+          <Tooltip>
+            <DropdownMenuTrigger
+              render={
+                <TooltipTrigger
+                  render={
+                    <Button variant="outline" size="icon-sm" className="relative text-muted-foreground">
+                      <Filter className="size-4" />
+                      {hasActiveFilters && (
+                        <span className="absolute top-0 right-0 size-1.5 rounded-full bg-brand" />
+                      )}
+                    </Button>
+                  }
+                />
+              }
+            />
+            <TooltipContent side="bottom">Filter</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end" className="w-auto">
             {/* Status */}
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
@@ -376,7 +369,7 @@ export function IssuesHeader() {
                     <DropdownMenuCheckboxItem
                       key={s}
                       checked={checked}
-                      onCheckedChange={() => toggleStatusFilter(s)}
+                      onCheckedChange={() => act.toggleStatusFilter(s)}
                       className={FILTER_ITEM_CLASS}
                     >
                       <HoverCheck checked={checked} />
@@ -412,7 +405,7 @@ export function IssuesHeader() {
                     <DropdownMenuCheckboxItem
                       key={p}
                       checked={checked}
-                      onCheckedChange={() => togglePriorityFilter(p)}
+                      onCheckedChange={() => act.togglePriorityFilter(p)}
                       className={FILTER_ITEM_CLASS}
                     >
                       <HoverCheck checked={checked} />
@@ -444,10 +437,10 @@ export function IssuesHeader() {
                 <ActorSubContent
                   counts={counts.assignee}
                   selected={assigneeFilters}
-                  onToggle={toggleAssigneeFilter}
+                  onToggle={act.toggleAssigneeFilter}
                   showNoAssignee
                   includeNoAssignee={includeNoAssignee}
-                  onToggleNoAssignee={toggleNoAssignee}
+                  onToggleNoAssignee={act.toggleNoAssignee}
                   noAssigneeCount={counts.noAssignee}
                 />
               </DropdownMenuSubContent>
@@ -468,7 +461,7 @@ export function IssuesHeader() {
                 <ActorSubContent
                   counts={counts.creator}
                   selected={creatorFilters}
-                  onToggle={toggleCreatorFilter}
+                  onToggle={act.toggleCreatorFilter}
                 />
               </DropdownMenuSubContent>
             </DropdownMenuSub>
@@ -477,7 +470,7 @@ export function IssuesHeader() {
             {hasActiveFilters && (
               <>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={clearFilters}>
+                <DropdownMenuItem onClick={act.clearFilters}>
                   Reset all filters
                 </DropdownMenuItem>
               </>
@@ -487,15 +480,21 @@ export function IssuesHeader() {
 
         {/* Display settings */}
         <Popover>
-          <PopoverTrigger
-            render={
-              <Button variant="outline" size="sm">
-                <SlidersHorizontal className="size-3.5" />
-                Display
-              </Button>
-            }
-          />
-          <PopoverContent align="start" className="w-64 p-0">
+          <Tooltip>
+            <PopoverTrigger
+              render={
+                <TooltipTrigger
+                  render={
+                    <Button variant="outline" size="icon-sm" className="text-muted-foreground">
+                      <SlidersHorizontal className="size-4" />
+                    </Button>
+                  }
+                />
+              }
+            />
+            <TooltipContent side="bottom">Display settings</TooltipContent>
+          </Tooltip>
+          <PopoverContent align="end" className="w-64 p-0">
             <div className="border-b px-3 py-2.5">
               <span className="text-xs font-medium text-muted-foreground">
                 Ordering
@@ -518,7 +517,7 @@ export function IssuesHeader() {
                     {SORT_OPTIONS.map((opt) => (
                       <DropdownMenuItem
                         key={opt.value}
-                        onClick={() => setSortBy(opt.value)}
+                        onClick={() => act.setSortBy(opt.value)}
                       >
                         {opt.label}
                       </DropdownMenuItem>
@@ -529,7 +528,7 @@ export function IssuesHeader() {
                   variant="outline"
                   size="icon-sm"
                   onClick={() =>
-                    setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                    act.setSortDirection(sortDirection === "asc" ? "desc" : "asc")
                   }
                   title={sortDirection === "asc" ? "Ascending" : "Descending"}
                 >
@@ -556,7 +555,7 @@ export function IssuesHeader() {
                     <Switch
                       size="sm"
                       checked={cardProperties[opt.key]}
-                      onCheckedChange={() => toggleCardProperty(opt.key)}
+                      onCheckedChange={() => act.toggleCardProperty(opt.key)}
                     />
                   </label>
                 ))}
@@ -564,19 +563,43 @@ export function IssuesHeader() {
             </div>
           </PopoverContent>
         </Popover>
-      </div>
 
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-muted-foreground">
-          {filteredCount} {filteredCount === 1 ? "Issue" : "Issues"}
-        </span>
-        <Button
-          size="sm"
-          onClick={() => useModalStore.getState().open("create-issue")}
-        >
-          <Plus />
-          New Issue
-        </Button>
+        {/* View toggle */}
+        <DropdownMenu>
+          <Tooltip>
+            <DropdownMenuTrigger
+              render={
+                <TooltipTrigger
+                  render={
+                    <Button variant="outline" size="icon-sm" className="text-muted-foreground">
+                      {viewMode === "board" ? (
+                        <Columns3 className="size-4" />
+                      ) : (
+                        <List className="size-4" />
+                      )}
+                    </Button>
+                  }
+                />
+              }
+            />
+            <TooltipContent side="bottom">
+              {viewMode === "board" ? "Board view" : "List view"}
+            </TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end" className="w-auto">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>View</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => act.setViewMode("board")}>
+                <Columns3 />
+                Board
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => act.setViewMode("list")}>
+                <List />
+                List
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );

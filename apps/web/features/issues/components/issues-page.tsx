@@ -7,7 +7,10 @@ import type { IssueStatus } from "@/shared/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useIssueStore } from "@/features/issues/store";
 import { useIssueViewStore, initFilterWorkspaceSync } from "@/features/issues/stores/view-store";
+import { useIssuesScopeStore } from "@/features/issues/stores/issues-scope-store";
+import { ViewStoreProvider } from "@/features/issues/stores/view-store-context";
 import { filterIssues } from "@/features/issues/utils/filter";
+import { BOARD_STATUSES } from "@/features/issues/config";
 import { useWorkspaceStore } from "@/features/workspace";
 import { WorkspaceAvatar } from "@/features/workspace";
 import { api } from "@/shared/api";
@@ -17,19 +20,11 @@ import { BoardView } from "./board-view";
 import { ListView } from "./list-view";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 
-const BOARD_STATUSES: IssueStatus[] = [
-  "backlog",
-  "todo",
-  "in_progress",
-  "in_review",
-  "done",
-  "blocked",
-];
-
 export function IssuesPage() {
   const allIssues = useIssueStore((s) => s.issues);
   const loading = useIssueStore((s) => s.loading);
   const workspace = useWorkspaceStore((s) => s.workspace);
+  const scope = useIssuesScopeStore((s) => s.scope);
   const viewMode = useIssueViewStore((s) => s.viewMode);
   const statusFilters = useIssueViewStore((s) => s.statusFilters);
   const priorityFilters = useIssueViewStore((s) => s.priorityFilters);
@@ -43,11 +38,20 @@ export function IssuesPage() {
 
   useEffect(() => {
     useIssueSelectionStore.getState().clear();
-  }, [viewMode]);
+  }, [viewMode, scope]);
+
+  // Scope pre-filter: narrow by assignee type
+  const scopedIssues = useMemo(() => {
+    if (scope === "members")
+      return allIssues.filter((i) => i.assignee_type === "member");
+    if (scope === "agents")
+      return allIssues.filter((i) => i.assignee_type === "agent");
+    return allIssues;
+  }, [allIssues, scope]);
 
   const issues = useMemo(
-    () => filterIssues(allIssues, { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters }),
-    [allIssues, statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters],
+    () => filterIssues(scopedIssues, { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters }),
+    [scopedIssues, statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters],
   );
 
   const visibleStatuses = useMemo(() => {
@@ -63,9 +67,10 @@ export function IssuesPage() {
   const handleMoveIssue = useCallback(
     (issueId: string, newStatus: IssueStatus, newPosition?: number) => {
       // Auto-switch to manual sort so drag ordering is preserved
-      if (useIssueViewStore.getState().sortBy !== "position") {
-        useIssueViewStore.getState().setSortBy("position");
-        useIssueViewStore.getState().setSortDirection("asc");
+      const viewState = useIssueViewStore.getState();
+      if (viewState.sortBy !== "position") {
+        viewState.setSortBy("position");
+        viewState.setSortDirection("asc");
       }
 
       const updates: Partial<{ status: IssueStatus; position: number }> = {
@@ -121,24 +126,26 @@ export function IssuesPage() {
         <span className="text-sm font-medium">Issues</span>
       </div>
 
-      {/* Header 2: View toggle + filters */}
-      <IssuesHeader />
+      {/* Header 2: Scope tabs + filters */}
+      <IssuesHeader scopedIssues={scopedIssues} />
 
       {/* Content: scrollable */}
-      <div className="flex flex-col flex-1 min-h-0">
-        {viewMode === "board" ? (
-          <BoardView
-            issues={issues}
-            allIssues={allIssues}
-            visibleStatuses={visibleStatuses}
-            hiddenStatuses={hiddenStatuses}
-            onMoveIssue={handleMoveIssue}
-          />
-        ) : (
-          <ListView issues={issues} visibleStatuses={visibleStatuses} />
-        )}
-      </div>
-      {viewMode === "list" && <BatchActionToolbar />}
+      <ViewStoreProvider store={useIssueViewStore}>
+        <div className="flex flex-col flex-1 min-h-0">
+          {viewMode === "board" ? (
+            <BoardView
+              issues={issues}
+              allIssues={scopedIssues}
+              visibleStatuses={visibleStatuses}
+              hiddenStatuses={hiddenStatuses}
+              onMoveIssue={handleMoveIssue}
+            />
+          ) : (
+            <ListView issues={issues} visibleStatuses={visibleStatuses} />
+          )}
+        </div>
+        {viewMode === "list" && <BatchActionToolbar />}
+      </ViewStoreProvider>
     </div>
   );
 }

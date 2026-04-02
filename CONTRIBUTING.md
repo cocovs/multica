@@ -1,6 +1,6 @@
-# Local Development Guide
+# Contributing Guide
 
-This guide documents the intended local development workflow for Multica.
+This guide documents the local development workflow for contributors working on the Multica codebase.
 
 It covers:
 
@@ -314,18 +314,8 @@ Run the local daemon:
 make daemon
 ```
 
-Normal flow:
-
-1. start the daemon
-2. open the pairing link it prints
-3. choose the workspace in the browser
-4. let the daemon register its local runtime
-
-Debug shortcut:
-
-- you can set `MULTICA_WORKSPACE_ID` in your env file
-- this skips normal pairing
-- treat it as a local shortcut, not the default workflow
+The daemon authenticates using the CLI's stored token (`multica login`).
+It registers runtimes for all watched workspaces from the CLI config.
 
 ## Troubleshooting
 

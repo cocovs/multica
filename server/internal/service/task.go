@@ -70,9 +70,58 @@ func (s *TaskService) EnqueueTaskForIssue(ctx context.Context, issue db.Issue, t
 	return task, nil
 }
 
+// EnqueueTaskForMention creates a queued task for a mentioned agent on an issue.
+// Unlike EnqueueTaskForIssue, this takes an explicit agent ID rather than
+// deriving it from the issue assignee.
+func (s *TaskService) EnqueueTaskForMention(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID) (db.AgentTaskQueue, error) {
+	agent, err := s.Queries.GetAgent(ctx, agentID)
+	if err != nil {
+		slog.Error("mention task enqueue failed: agent not found", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
+		return db.AgentTaskQueue{}, fmt.Errorf("load agent: %w", err)
+	}
+	if !agent.RuntimeID.Valid {
+		slog.Error("mention task enqueue failed: agent has no runtime", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID))
+		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
+	}
+
+	task, err := s.Queries.CreateAgentTask(ctx, db.CreateAgentTaskParams{
+		AgentID:          agentID,
+		RuntimeID:        agent.RuntimeID,
+		IssueID:          issue.ID,
+		Priority:         priorityToInt(issue.Priority),
+		TriggerCommentID: triggerCommentID,
+	})
+	if err != nil {
+		slog.Error("mention task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
+		return db.AgentTaskQueue{}, fmt.Errorf("create task: %w", err)
+	}
+
+	slog.Info("mention task enqueued", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID))
+	return task, nil
+}
+
 // CancelTasksForIssue cancels all active tasks for an issue.
 func (s *TaskService) CancelTasksForIssue(ctx context.Context, issueID pgtype.UUID) error {
 	return s.Queries.CancelAgentTasksByIssue(ctx, issueID)
+}
+
+// CancelTask cancels a single task by ID. It broadcasts a task:cancelled event
+// so frontends can update immediately.
+func (s *TaskService) CancelTask(ctx context.Context, taskID pgtype.UUID) (*db.AgentTaskQueue, error) {
+	task, err := s.Queries.CancelAgentTask(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("cancel task: %w", err)
+	}
+
+	slog.Info("task cancelled", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID))
+
+	// Reconcile agent status
+	s.ReconcileAgentStatus(ctx, task.AgentID)
+
+	// Broadcast cancellation as a task:failed event so frontends clear the live card
+	s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, task)
+
+	return &task, nil
 }
 
 // ClaimTask atomically claims the next queued task for an agent,
@@ -114,8 +163,6 @@ func (s *TaskService) ClaimTask(ctx context.Context, agentID pgtype.UUID) (*db.A
 
 // ClaimTaskForRuntime claims the next runnable task for a runtime while
 // still respecting each agent's max_concurrent_tasks limit.
-// Tasks whose issues are in a terminal status (done/cancelled) are
-// automatically cancelled and skipped.
 func (s *TaskService) ClaimTaskForRuntime(ctx context.Context, runtimeID pgtype.UUID) (*db.AgentTaskQueue, error) {
 	tasks, err := s.Queries.ListPendingTasksByRuntime(ctx, runtimeID)
 	if err != nil {
@@ -124,15 +171,6 @@ func (s *TaskService) ClaimTaskForRuntime(ctx context.Context, runtimeID pgtype.
 
 	triedAgents := map[string]struct{}{}
 	for _, candidate := range tasks {
-		// Skip tasks whose issues have reached a terminal status.
-		if issue, err := s.Queries.GetIssue(ctx, candidate.IssueID); err == nil {
-			if issue.Status == "done" || issue.Status == "cancelled" {
-				slog.Info("skipping task for terminal issue", "task_id", util.UUIDToString(candidate.ID), "issue_status", issue.Status)
-				_ = s.Queries.CancelAgentTasksByIssue(ctx, candidate.IssueID)
-				continue
-			}
-		}
-
 		agentKey := util.UUIDToString(candidate.AgentID)
 		if _, seen := triedAgents[agentKey]; seen {
 			continue

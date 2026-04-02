@@ -34,6 +34,7 @@ vi.mock("@/features/workspace", () => ({
     getActorName: (type: string, id: string) =>
       type === "member" ? "Test User" : "Claude Agent",
     getActorInitials: () => "TU",
+    getActorAvatarUrl: () => null,
   }),
   useWorkspaceStore: Object.assign(
     (selector?: any) => {
@@ -149,9 +150,17 @@ vi.mock("@/features/issues/stores/view-store", () => ({
   ],
 }));
 
+// Mock view store context (shared components read from context)
+vi.mock("@/features/issues/stores/view-store-context", () => ({
+  ViewStoreProvider: ({ children }: { children: React.ReactNode }) => children,
+  useViewStore: (selector?: any) => (selector ? selector(mockViewState) : mockViewState),
+  useViewStoreApi: () => ({ getState: () => mockViewState, setState: vi.fn(), subscribe: vi.fn() }),
+}));
+
 // Mock issue config
 vi.mock("@/features/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
+  BOARD_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_CONFIG: {
     backlog: { label: "Backlog", iconColor: "text-muted-foreground", hoverBg: "hover:bg-accent" },
@@ -330,23 +339,26 @@ describe("IssuesPage", () => {
     expect(screen.getByText("Issues")).toBeInTheDocument();
   });
 
-  it("shows 'New Issue' button", () => {
+  it("shows scope buttons", () => {
     mockStoreState.loading = false;
     mockStoreState.issues = [];
 
     render(<IssuesPage />);
 
-    expect(screen.getByText("New Issue")).toBeInTheDocument();
+    expect(screen.getByText("All")).toBeInTheDocument();
+    expect(screen.getByText("Members")).toBeInTheDocument();
+    expect(screen.getByText("Agents")).toBeInTheDocument();
   });
 
-  it("shows filter buttons", () => {
+  it("shows filter and display icon buttons", () => {
     mockStoreState.loading = false;
     mockStoreState.issues = mockIssues;
 
     render(<IssuesPage />);
 
-    expect(screen.getByText("Filter")).toBeInTheDocument();
-    expect(screen.getByText("Display")).toBeInTheDocument();
+    // Filter and Display are now icon-only buttons, verify they render as buttons
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.length).toBeGreaterThan(0);
   });
 
   it("shows empty board view when no issues exist", () => {

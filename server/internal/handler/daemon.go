@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -53,6 +54,12 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "at least one runtime is required")
 		return
 	}
+
+	// Verify the caller is a member of the target workspace.
+	if _, ok := h.requireWorkspaceMember(w, r, req.WorkspaceID, "workspace not found"); !ok {
+		return
+	}
+
 	ws, err := h.Queries.GetWorkspace(r.Context(), parseUUID(req.WorkspaceID))
 	if err != nil {
 		writeError(w, http.StatusNotFound, "workspace not found")
@@ -471,11 +478,32 @@ func (h *Handler) ReportTaskMessages(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListTaskMessages(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskId")
 
-	messages, err := h.Queries.ListTaskMessages(r.Context(), parseUUID(taskID))
+	task, err := h.Queries.GetAgentTask(r.Context(), parseUUID(taskID))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+
+	var messages []db.TaskMessage
+	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
+		sinceSeq, parseErr := strconv.Atoi(sinceStr)
+		if parseErr != nil {
+			writeError(w, http.StatusBadRequest, "invalid since parameter")
+			return
+		}
+		messages, err = h.Queries.ListTaskMessagesSince(r.Context(), db.ListTaskMessagesSinceParams{
+			TaskID: parseUUID(taskID),
+			Seq:    int32(sinceSeq),
+		})
+	} else {
+		messages, err = h.Queries.ListTaskMessages(r.Context(), parseUUID(taskID))
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list task messages")
 		return
 	}
+
+	issueID := uuidToString(task.IssueID)
 
 	resp := make([]protocol.TaskMessagePayload, len(messages))
 	for i, m := range messages {
@@ -485,6 +513,7 @@ func (h *Handler) ListTaskMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		resp[i] = protocol.TaskMessagePayload{
 			TaskID:  taskID,
+			IssueID: issueID,
 			Seq:     int(m.Seq),
 			Type:    m.Type,
 			Tool:    m.Tool.String,
@@ -508,6 +537,21 @@ func (h *Handler) GetActiveTaskForIssue(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"task": taskToResponse(tasks[0])})
+}
+
+// CancelTask cancels a running or queued task by ID.
+func (h *Handler) CancelTask(w http.ResponseWriter, r *http.Request) {
+	taskID := chi.URLParam(r, "taskId")
+
+	task, err := h.TaskService.CancelTask(r.Context(), parseUUID(taskID))
+	if err != nil {
+		slog.Warn("cancel task failed", "task_id", taskID, "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	slog.Info("task cancelled by user", "task_id", taskID, "issue_id", uuidToString(task.IssueID))
+	writeJSON(w, http.StatusOK, taskToResponse(*task))
 }
 
 // ListTasksByIssue returns all tasks (any status) for an issue — used for execution history.

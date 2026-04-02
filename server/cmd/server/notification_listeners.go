@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"regexp"
 
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/handler"
@@ -13,14 +12,12 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-// mention represents a parsed @mention from markdown content.
+// mention represents a parsed @mention from markdown content (local alias).
 type mention struct {
-	Type string // "member", "agent", or "issue"
-	ID   string // user_id, agent_id, or issue_id
+	Type string // "member", "agent", "issue", or "all"
+	ID   string // user_id, agent_id, issue_id, or "all"
 }
 
-// mentionRe matches [@Label](mention://type/id) or [Label](mention://type/id) in markdown.
-var mentionRe = regexp.MustCompile(`\[@?[^\]]*\]\(mention://(member|agent|issue)/([0-9a-fA-F-]+)\)`)
 
 // statusLabels maps DB status values to human-readable labels for notifications.
 var statusLabels = map[string]string{
@@ -59,17 +56,12 @@ func priorityLabel(p string) string {
 var emptyDetails = []byte("{}")
 
 // parseMentions extracts mentions from markdown content.
+// Delegates to the shared util.ParseMentions and converts to the local type.
 func parseMentions(content string) []mention {
-	matches := mentionRe.FindAllStringSubmatch(content, -1)
-	seen := make(map[string]bool)
-	var result []mention
-	for _, m := range matches {
-		key := m[1] + ":" + m[2]
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		result = append(result, mention{Type: m[1], ID: m[2]})
+	parsed := util.ParseMentions(content)
+	result := make([]mention, len(parsed))
+	for i, m := range parsed {
+		result[i] = mention{Type: m.Type, ID: m.ID}
 	}
 	return result
 }
@@ -202,7 +194,8 @@ func notifyDirect(
 }
 
 // notifyMentionedMembers creates inbox items for each @mentioned member,
-// excluding the actor and any IDs in the skip set.
+// excluding the actor and any IDs in the skip set. When an @all mention is
+// present, all workspace members are notified (excluding agents).
 func notifyMentionedMembers(
 	bus *events.Bus,
 	queries *db.Queries,
@@ -215,17 +208,40 @@ func notifyMentionedMembers(
 	skip map[string]bool,
 	details []byte,
 ) {
+	// Collect the set of member IDs to notify.
+	recipientIDs := map[string]bool{}
+
+	hasAll := false
 	for _, m := range mentions {
-		if m.Type != "member" {
+		if m.Type == "all" {
+			hasAll = true
 			continue
 		}
-		if m.ID == e.ActorID || skip[m.ID] {
+		if m.Type == "member" {
+			recipientIDs[m.ID] = true
+		}
+	}
+
+	// If @all is present, expand to all workspace members.
+	if hasAll {
+		members, err := queries.ListMembers(context.Background(), parseUUID(e.WorkspaceID))
+		if err != nil {
+			slog.Error("failed to list members for @all mention", "workspace_id", e.WorkspaceID, "error", err)
+		} else {
+			for _, m := range members {
+				recipientIDs[util.UUIDToString(m.UserID)] = true
+			}
+		}
+	}
+
+	for id := range recipientIDs {
+		if id == e.ActorID || skip[id] {
 			continue
 		}
 		item, err := queries.CreateInboxItem(context.Background(), db.CreateInboxItemParams{
 			WorkspaceID:   parseUUID(e.WorkspaceID),
 			RecipientType: "member",
-			RecipientID:   parseUUID(m.ID),
+			RecipientID:   parseUUID(id),
 			Type:          "mentioned",
 			Severity:      "info",
 			IssueID:       parseUUID(issueID),
@@ -235,7 +251,7 @@ func notifyMentionedMembers(
 			Details:       details,
 		})
 		if err != nil {
-			slog.Error("mention inbox creation failed", "mentioned_id", m.ID, "error", err)
+			slog.Error("mention inbox creation failed", "mentioned_id", id, "error", err)
 			continue
 		}
 		resp := inboxItemToResponse(item)
