@@ -51,8 +51,8 @@ func runAttachmentDownload(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("attachment has no download URL")
 	}
 
-	filename := strVal(att, "filename")
-	if filename == "" {
+	filename := filepath.Base(strVal(att, "filename"))
+	if filename == "" || filename == "." {
 		filename = args[0]
 	}
 
